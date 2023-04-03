@@ -1088,7 +1088,9 @@ class SoSCollector(SoSComponent):
         # force add any non-regex node strings from nodes option
         if self.opts.nodes:
             for node in self.opts.nodes:
-                if any(i in node for i in '*\\?()/[]'):
+                # nodes for juju transport can take the form of "ubuntu/0"
+                not_juju = self.opts.transport != "juju"
+                if any(i in node and not_juju for i in '*\\?()/[]'):
                     continue
                 if node not in self.node_list:
                     self.log_debug("Force adding %s to node list" % node)
