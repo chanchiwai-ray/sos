@@ -10,6 +10,7 @@
 
 import json
 import collections
+import re
 from sos.collector.clusters import Cluster
 
 
@@ -41,40 +42,78 @@ class juju(Cluster):
     option_list = [
         ("apps", "", "Filter node list by apps (comma separated)."),
         ("units", "", "Filter node list by units (comma separated)."),
-        ("models", "", "Filter node list by moedls (comma separated)."),
+        ("models", "", "Filter node list by models (comma separated)."),
         ("machines", "", "Filter node list by machines (comma separated)."),
     ]
 
-    def _get_model_info(self, model_name):
-        model_option = f"-m {model_name}" if model_name else ""
-        format_option = "--format json"
-        status_cmd = f"{self.cmd} status {model_option} {format_option}"
+    def _cleanup_juju_output(self, output):
+        """Remove leading characters before {."""
+        return re.sub(r"(^[^{]*)(.*)", "\\2", output, 0, re.MULTILINE)
 
-        juju_status = None
-        res = self.exec_primary_cmd(status_cmd)
-        if res["status"] == 0:
-            juju_status = json.loads(res["output"])
-        else:
-            raise Exception(f"{status_cmd} did not return usable output")
+    def _get_model_info(self, model_name):
+        juju_status = self._execute_juju_status(model_name)
 
         index = collections.defaultdict(dict)
         for app, app_info in juju_status["applications"].items():
             nodes = []
-            units = app_info.get("units")
-            if units:
-                for unit, unit_info in units.items():
-                    machine = unit_info["machine"]
-                    node = f"{model_name}:{machine}"
-                    index["units"][unit] = [node]
-                    index["machines"][machine] = [node]
-                    nodes.append(node)
+            units = app_info.get("units", {})
+            for unit, unit_info in units.items():
+                machine = unit_info["machine"]
+                node = f"{model_name}:{machine}"
+                index["units"][unit] = [node]
+                index["machines"][machine] = [node]
+                nodes.append(node)
+
             index["apps"][app] = nodes
+
+        self._add_subordinates_to_index(index, juju_status, model_name)
+        self._add_machines_to_index(index, juju_status, model_name)
+
         return index
 
-    def _filter_by_resource(self, key, resources, model_info):
+    def _add_machines_to_index(self, index, juju_status, model_name):
+        """Add machines to index.
+
+        If model does not have any applications it needs to be manually added.
+        """
+        for machine in juju_status["machines"].keys():
+            node = f"{model_name}:{machine}"
+            index["machines"][machine] = [node]
+
+    def _add_subordinates_to_index(self, index, juju_status, model_name):
+        """Add subordinates to index.
+
+        Since subordinates does not have units they need to be manually added.
+        """
+        for app, app_info in juju_status["applications"].items():
+            subordinate_to = app_info.get("subordinate-to", [])
+            for parent in subordinate_to:
+                index["apps"][app].extend(index["apps"][parent])
+                units = juju_status["applications"][parent]["units"]
+                for unit, unit_info in units.items():
+                    node = f"{model_name}:{unit_info['machine']}"
+                    for sub_key, sub_value in unit_info.get("subordinates", {}).items():
+                        if sub_key.startswith(app + "/"):
+                            index["units"][sub_key] = [node]
+
+    def _execute_juju_status(self, model_name):
+        model_option = f"-m {model_name}" if model_name else ""
+        format_option = "--format json"
+        status_cmd = f"{self.cmd} status {model_option} {format_option}"
+        juju_status = None
+        res = self.exec_primary_cmd(status_cmd)
+        if res["status"] == 0:
+            juju_status = json.loads(self._cleanup_juju_output((res["output"])))
+        else:
+            raise Exception(f"{status_cmd} did not return usable output")
+        return juju_status
+
+    def _filter_by_pattern(self, key, patterns, model_info):
         nodes = set()
-        for resource in resources:
-            nodes.update(model_info[key].get(resource, []))
+        for pattern in patterns:
+            for key, value in model_info[key].items():
+                if re.match(pattern, key):
+                    nodes.update(value or [])
         return nodes
 
     def set_transport_type(self):
@@ -82,7 +121,7 @@ class juju(Cluster):
         return "juju"
 
     def get_nodes(self):
-        """Get the public addresses from `juju status`."""
+        """Get the machine numbers from `juju status`."""
         models = _parse_option_string(self.get_option("models"))
         apps = _parse_option_string(self.get_option("apps"))
         units = _parse_option_string(self.get_option("units"))
@@ -101,9 +140,7 @@ class juju(Cluster):
                     nodes.update(_nodes)
             else:
                 for key, resource in filters.items():
-                    _nodes = self._filter_by_resource(
-                        key, resource, model_info
-                    )
+                    _nodes = self._filter_by_pattern(key, resource, model_info)
                     nodes.update(_nodes)
 
         return list(nodes)
