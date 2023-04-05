@@ -111,8 +111,8 @@ class juju(Cluster):
     def _filter_by_pattern(self, key, patterns, model_info):
         nodes = set()
         for pattern in patterns:
-            for key, value in model_info[key].items():
-                if re.match(pattern, key):
+            for param, value in model_info[key].items():
+                if re.match(pattern, param):
                     nodes.update(value or [])
         return nodes
 
