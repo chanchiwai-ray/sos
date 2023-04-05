@@ -40,10 +40,10 @@ class juju(Cluster):
     cmd = "juju"
     cluster_name = "Juju Managed Clouds"
     option_list = [
-        ("apps", "", "Filter node list by apps (comma separated)."),
-        ("units", "", "Filter node list by units (comma separated)."),
-        ("models", "", "Filter node list by models (comma separated)."),
-        ("machines", "", "Filter node list by machines (comma separated)."),
+        ("apps", "", "Filter node list by apps (comma separated regex)."),
+        ("units", "", "Filter node list by units (comma separated regex)."),
+        ("models", "", "Filter node list by models (comma separated regex)."),
+        ("machines", "", "Filter node list by machines (comma separated regex)."),
     ]
 
     def _cleanup_juju_output(self, output):
@@ -54,6 +54,14 @@ class juju(Cluster):
         juju_status = self._execute_juju_status(model_name)
 
         index = collections.defaultdict(dict)
+        self._add_principals_to_index(index, juju_status, model_name)
+        self._add_subordinates_to_index(index, juju_status, model_name)
+        self._add_machines_to_index(index, juju_status, model_name)
+
+        return index
+
+    def _add_principals_to_index(self, index, juju_status, model_name):
+        """Adds principal units to index."""
         for app, app_info in juju_status["applications"].items():
             nodes = []
             units = app_info.get("units", {})
@@ -65,20 +73,6 @@ class juju(Cluster):
                 nodes.append(node)
 
             index["apps"][app] = nodes
-
-        self._add_subordinates_to_index(index, juju_status, model_name)
-        self._add_machines_to_index(index, juju_status, model_name)
-
-        return index
-
-    def _add_machines_to_index(self, index, juju_status, model_name):
-        """Add machines to index.
-
-        If model does not have any applications it needs to be manually added.
-        """
-        for machine in juju_status["machines"].keys():
-            node = f"{model_name}:{machine}"
-            index["machines"][machine] = [node]
 
     def _add_subordinates_to_index(self, index, juju_status, model_name):
         """Add subordinates to index.
@@ -95,6 +89,16 @@ class juju(Cluster):
                     for sub_key, sub_value in unit_info.get("subordinates", {}).items():
                         if sub_key.startswith(app + "/"):
                             index["units"][sub_key] = [node]
+    def _add_machines_to_index(self, index, juju_status, model_name):
+        """Add machines to index.
+
+        If model does not have any applications it needs to be manually added.
+        """
+        for machine in juju_status["machines"].keys():
+            node = f"{model_name}:{machine}"
+            index["machines"][machine] = [node]
+
+
 
     def _execute_juju_status(self, model_name):
         model_option = f"-m {model_name}" if model_name else ""
