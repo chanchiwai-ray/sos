@@ -151,8 +151,7 @@ class juju(Cluster):
         for model in models:
             model_info = self._get_model_info(model)
             if not any(filters.values()):
-                for _nodes in model_info["apps"].values():
-                    nodes.update(_nodes)
+                pass
             else:
                 for key, resource in filters.items():
                     if key in ["apps"]:

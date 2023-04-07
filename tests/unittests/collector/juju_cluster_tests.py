@@ -53,7 +53,7 @@ class JujuTest(unittest.TestCase):
     @patch(
         "sos.collector.clusters.juju.juju.exec_primary_cmd", side_effect=get_juju_status
     )
-    def test_get_nodes(self, mock_exec_primary_cmd):
+    def test_get_nodes_no_filter(self, mock_exec_primary_cmd):
         """No filter."""
         mock_opts = MockOptions()
         cluster = juju(
@@ -63,8 +63,7 @@ class JujuTest(unittest.TestCase):
             }
         )
         nodes = cluster.get_nodes()
-        nodes.sort()
-        assert nodes == [":0", ":2", ":3", ":4"]
+        assert nodes == []
         mock_exec_primary_cmd.assert_called_once_with("juju status  --format json")
 
     @patch(
@@ -129,7 +128,15 @@ class JujuTest(unittest.TestCase):
                 opt_type=str,
                 value="sos,sos2",
                 cluster=juju.__name__,
-            )
+            ),
+        )
+        mock_opts.cluster_options.append(
+            ClusterOption(
+                name="apps",
+                opt_type=str,
+                value="ubuntu",
+                cluster=juju.__name__,
+            ),
         )
         cluster = juju(
             commons={
@@ -145,7 +152,6 @@ class JujuTest(unittest.TestCase):
             "sos:0",
             "sos:2",
             "sos:3",
-            "sos:4",
         ]
         mock_exec_primary_cmd.assert_has_calls(
             [
@@ -168,6 +174,14 @@ class JujuTest(unittest.TestCase):
                 cluster=juju.__name__,
             )
         )
+        mock_opts.cluster_options.append(
+            ClusterOption(
+                name="apps",
+                opt_type=str,
+                value="ubuntu",
+                cluster=juju.__name__,
+            ),
+        )
         cluster = juju(
             commons={
                 "tmpdir": "/tmp",
@@ -180,7 +194,6 @@ class JujuTest(unittest.TestCase):
             "sos:0",
             "sos:2",
             "sos:3",
-            "sos:4",
         ]
         mock_exec_primary_cmd.assert_has_calls(
             [
