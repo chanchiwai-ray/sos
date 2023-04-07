@@ -95,6 +95,31 @@ class JujuTest(unittest.TestCase):
     @patch(
         "sos.collector.clusters.juju.juju.exec_primary_cmd", side_effect=get_juju_status
     )
+    def test_get_nodes_app_regex_filter(self, mock_exec_primary_cmd):
+        """Application filter."""
+        mock_opts = MockOptions()
+        mock_opts.cluster_options.append(
+            ClusterOption(
+                name="apps",
+                opt_type=str,
+                value="ubuntu|nginx",
+                cluster=juju.__name__,
+            )
+        )
+        cluster = juju(
+            commons={
+                "tmpdir": "/tmp",
+                "cmdlineopts": mock_opts,
+            }
+        )
+        nodes = cluster.get_nodes()
+        nodes.sort()
+        assert nodes == [":0", ":2", ":3", ":4"]
+        mock_exec_primary_cmd.assert_called_once_with("juju status  --format json")
+
+    @patch(
+        "sos.collector.clusters.juju.juju.exec_primary_cmd", side_effect=get_juju_status
+    )
     def test_get_nodes_model_filter_multiple_models(self, mock_exec_primary_cmd):
         """Multiple model filter."""
         mock_opts = MockOptions()

@@ -11,10 +11,11 @@
 import json
 import collections
 import re
+from typing import Optional
 from sos.collector.clusters import Cluster
 
 
-def _parse_option_string(strings):
+def _parse_option_string(strings: Optional[str] = None):
     """Parse commad separated string."""
     if not strings:
         return []
@@ -41,9 +42,9 @@ class juju(Cluster):
     cluster_name = "Juju Managed Clouds"
     option_list = [
         ("apps", "", "Filter node list by apps (comma separated regex)."),
-        ("units", "", "Filter node list by units (comma separated regex)."),
-        ("models", "", "Filter node list by models (comma separated regex)."),
-        ("machines", "", "Filter node list by machines (comma separated regex)."),
+        ("units", "", "Filter node list by units (comma separated string)."),
+        ("models", "", "Filter node list by models (comma separated string)."),
+        ("machines", "", "Filter node list by machines (comma separated string)."),
     ]
 
     def _cleanup_juju_output(self, output):
@@ -113,10 +114,20 @@ class juju(Cluster):
         return juju_status
 
     def _filter_by_pattern(self, key, patterns, model_info):
+        """Filter with regex match."""
         nodes = set()
         for pattern in patterns:
             for param, value in model_info[key].items():
                 if re.match(pattern, param):
+                    nodes.update(value or [])
+        return nodes
+
+    def _filter_by_fixed(self, key, patterns, model_info):
+        """Filter with fixed match."""
+        nodes = set()
+        for pattern in patterns:
+            for param, value in model_info[key].items():
+                if pattern == param:
                     nodes.update(value or [])
         return nodes
 
@@ -144,7 +155,10 @@ class juju(Cluster):
                     nodes.update(_nodes)
             else:
                 for key, resource in filters.items():
-                    _nodes = self._filter_by_pattern(key, resource, model_info)
+                    if key in ["apps"]:
+                        _nodes = self._filter_by_pattern(key, resource, model_info)
+                    else:
+                        _nodes = self._filter_by_fixed(key, resource, model_info)
                     nodes.update(_nodes)
 
         return list(nodes)
